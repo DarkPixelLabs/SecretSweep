@@ -8,7 +8,7 @@ const SECRET_PATTERNS = [
   { name: "Slack Token", confidence: "high", regex: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g },
   { name: "Generic JWT", confidence: "high", regex: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g },
   { name: "Private key block", confidence: "high", regex: /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/g },
-  { name: "Hardcoded password assignment", confidence: "medium", regex: /(?:^|[\s,{;])(?:pass|password)\s*[:=]\s*["']?([^\s"'#,;}]{4,})["']?/gim },
+  { name: "Hardcoded password assignment", confidence: "medium", regex: /(?:^|[\s,{;])(?:["']?)(?:pass|password)(?:["']?)\s*[:=]\s*["']?([^\s"'#,;}]{4,})["']?/gim },
   { name: "possible secret (high entropy)", confidence: "low", custom: true }
 ];
 
@@ -22,14 +22,15 @@ function shannonEntropy(value) {
 }
 
 const NON_SECRET_KEYS = /^(id|uuid|guid|hash|checksum|digest|version|name|title|description|path|url|host|hostname|filename|file|slug|keyid|key_id)$/i;
-const ASSIGNMENT = /(?:^|[\n\r])\s*([A-Za-z_$][\w$.-]*)\s*(?:=|:|=>)\s*(?:["']([^"'\n\r]{24,})["']|([A-Za-z0-9+/=_-]{24,}))/g;
+const ASSIGNMENT = /(?:^|[\n\r])\s*(?:"([A-Za-z_$][\w$.-]*)"|'([A-Za-z_$][\w$.-]*)'|([A-Za-z_$][\w$.-]*))\s*(?:=|:|=>)\s*(?:"([^"\n\r]{24,})"|'([^'\n\r]{24,})'|([A-Za-z0-9+/=_-]{24,}))/g;
 
 function findHighEntropy(text) {
   const findings = [];
-  let match;
   ASSIGNMENT.lastIndex = 0;
+  let match;
   while ((match = ASSIGNMENT.exec(text))) {
-    const key = match[1]; const value = match[2] || match[3] || "";
+    const key = match[1] || match[2] || match[3] || "";
+    const value = match[4] || match[5] || match[6] || "";
     if (NON_SECRET_KEYS.test(key) || /(?:hash|checksum|digest)/i.test(key)) continue;
     if (value.length < 24 || shannonEntropy(value) <= 4.0) continue;
     const full = match[0]; const valueStart = match.index + full.lastIndexOf(value);
@@ -51,7 +52,12 @@ function detectSecrets(text) {
       if (match[0].length === 0) pattern.regex.lastIndex += 1;
     }
   }
-  return findings.sort((a, b) => a.start - b.start || b.end - a.end);
+  const ranked = findings.sort((a, b) => ({ high: 3, medium: 2, low: 1 }[b.confidence] - ({ high: 3, medium: 2, low: 1 }[a.confidence])) || a.start - b.start || b.end - b.start);
+  const kept = [];
+  for (const finding of ranked) {
+    if (!kept.some(existing => finding.start < existing.end && existing.start < finding.end)) kept.push(finding);
+  }
+  return kept.sort((a, b) => a.start - b.start || a.end - b.end);
 }
 
 function redactPreview(value) {
@@ -65,11 +71,13 @@ function runPatternSelfTest() {
     "key = placeholder_value_1234567890",
     "id = 550e8400-e29b-41d4-a716-446655440000",
     "token = sk-abcdefghijklmnopqrstuvwxyz1234",
-    "aws = AKIAIOSFODNN7EXAMPLE"
+    "aws = AKIAIOSFODNN7EXAMPLE",
+    "{\"apiKey\": \"Qx9pLm2vR8sT4yU7wE5kN3jH6gF2dS9aB1cZ0mX8\"}"
   ].join("\n");
   const findings = detectSecrets(sample);
   console.assert(findings.some(f => f.pattern === "OpenAI-style key"), "OpenAI-style key self-test failed");
   console.assert(findings.some(f => f.pattern === "AWS Access Key"), "AWS key self-test failed");
+  console.assert(findings.some(f => f.pattern === "possible secret (high entropy)"), "JSON entropy self-test failed");
   console.assert(!findings.some(f => f.value === "550e8400-e29b-41d4-a716-446655440000"), "UUID false-positive self-test failed");
   console.assert(redactPreview("short") === "[redacted]", "Preview minimum-length self-test failed");
   return findings.length;
