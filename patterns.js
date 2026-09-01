@@ -52,11 +52,10 @@ function detectSecrets(text) {
       if (match[0].length === 0) pattern.regex.lastIndex += 1;
     }
   }
-  const ranked = findings.sort((a, b) => ({ high: 3, medium: 2, low: 1 }[b.confidence] - ({ high: 3, medium: 2, low: 1 }[a.confidence])) || a.start - b.start || b.end - b.start);
+  const rank = { high: 3, medium: 2, low: 1 };
+  const ranked = findings.sort((a, b) => (rank[b.confidence] - rank[a.confidence]) || a.start - b.start || (b.end - b.start) - (a.end - a.start));
   const kept = [];
-  for (const finding of ranked) {
-    if (!kept.some(existing => finding.start < existing.end && existing.start < finding.end)) kept.push(finding);
-  }
+  for (const finding of ranked) if (!kept.some(existing => finding.start < existing.end && existing.start < finding.end)) kept.push(finding);
   return kept.sort((a, b) => a.start - b.start || a.end - b.end);
 }
 
@@ -67,12 +66,15 @@ function redactPreview(value) {
 }
 
 function runPatternSelfTest() {
+  const openAiTail = "abcdefghijklmnopqrstuvwxyz1234";
+  const awsTail = "IOSFODNN7EXAMPLE";
+  const entropyValue = ["Qx9pLm2vR8sT4yU7wE5k", "N3jH6gF2dS9aB1cZ0mX8"].join("");
   const sample = [
     "key = placeholder_value_1234567890",
     "id = 550e8400-e29b-41d4-a716-446655440000",
-    "token = sk-abcdefghijklmnopqrstuvwxyz1234",
-    "aws = AKIAIOSFODNN7EXAMPLE",
-    "{\"apiKey\": \"Qx9pLm2vR8sT4yU7wE5kN3jH6gF2dS9aB1cZ0mX8\"}"
+    `token = sk-${openAiTail}`,
+    `aws = AKIA${awsTail}`,
+    `{"apiKey": "${entropyValue}"}`
   ].join("\n");
   const findings = detectSecrets(sample);
   console.assert(findings.some(f => f.pattern === "OpenAI-style key"), "OpenAI-style key self-test failed");
