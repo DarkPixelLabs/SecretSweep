@@ -34,13 +34,9 @@ async function fetchFileTree() {
   const meta = await githubFetch(base); state.branch = meta.default_branch;
   const tree = await githubFetch(`${base}/git/trees/${encodeURIComponent(state.branch)}?recursive=1`);
   state.files = (tree.tree || []).filter(item => item.type === "blob" && isCandidate(item.path));
-  console.debug("SecretSweep candidate files", state.files.map(file => file.path));
   return state.files;
 }
-function decodeBase64Utf8(value) {
-  const binary = atob(String(value).replace(/\s/g, "")); const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
-  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-}
+function decodeBase64Utf8(value) { const binary = atob(String(value).replace(/\s/g, "")); const bytes = Uint8Array.from(binary, char => char.charCodeAt(0)); return new TextDecoder("utf-8").decode(bytes); }
 async function fetchCandidateContents(files) {
   const base = `https://api.github.com/repos/${encodeURIComponent(state.repo.owner)}/${encodeURIComponent(state.repo.repo)}/contents/`;
   const usable = files.filter(file => Number(file.size || 0) <= 1024 * 1024);
@@ -54,8 +50,20 @@ async function fetchCandidateContents(files) {
     state.scanFiles.push({ path: file.path, size: file.size, text: decodeBase64Utf8(data.content) });
     state.scanned += 1;
   }
-  setProgress(95, `Fetched ${state.scanFiles.length} files · ${rateText()}`);
   return state.scanFiles;
+}
+function lineNumber(text, offset) { return text.slice(0, offset).split(/\r?\n/).length; }
+function githubFileUrl(path, line) { return `https://github.com/${encodeURIComponent(state.repo.owner)}/${encodeURIComponent(state.repo.repo)}/blob/${encodeURIComponent(state.branch)}/${path.split("/").map(encodeURIComponent).join("/")}#L${line}`; }
+function scanContents() {
+  state.findings = [];
+  for (const file of state.scanFiles) {
+    const detections = window.secretSweepPatterns.detectSecrets(file.text);
+    for (const detection of detections) {
+      const line = lineNumber(file.text, detection.start);
+      state.findings.push({ path: file.path, line, pattern: detection.pattern, confidence: detection.confidence, preview: window.secretSweepPatterns.redactPreview(detection.value), url: githubFileUrl(file.path, line) });
+    }
+  }
+  return state.findings;
 }
 
 const form = document.getElementById("scan-form");
@@ -72,11 +80,13 @@ form.addEventListener("submit", async (event) => {
     setProgress(2, "Fetching repository metadata…");
     const files = await fetchFileTree();
     if (!files.length) throw new Error("No scannable text files were found in this repository.");
-    const skipped = files.filter(file => Number(file.size || 0) > 1024 * 1024).length;
-    if (skipped) setStatus(`${skipped} file${skipped === 1 ? "" : "s"} over 1 MB will be skipped.`);
     await fetchCandidateContents(files);
-    setProgress(100, "File contents loaded."); setStatus(`Loaded ${state.scanFiles.length} files. Detection is next.`);
+    setProgress(96, "Checking fetched files for obvious secrets…");
+    scanContents();
+    setProgress(100, "Scan complete."); setStatus(`Scanned ${state.scanFiles.length} files · ${state.findings.length} finding${state.findings.length === 1 ? "" : "s"} · ${rateText()}`);
+    document.getElementById("results-section").hidden = false;
+    if (typeof window.renderResults === "function") window.renderResults();
   } catch (cause) { setStatus(cause.message); }
   finally { setBusy(false); }
 });
-window.secretSweep = { state, parseRepo, isCandidate, fetchFileTree, fetchCandidateContents };
+window.secretSweep = { state, parseRepo, isCandidate, fetchFileTree, fetchCandidateContents, scanContents, lineNumber };
