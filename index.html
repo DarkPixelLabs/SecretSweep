@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecretSweep</title>
+  <meta name="description" content="Scan public GitHub repositories for obvious hardcoded secrets in your browser.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="site-header">
+      <div>
+        <a class="brand" href="./">SecretSweep</a>
+        <p class="tagline">Find exposed secrets before someone else does.</p>
+      </div>
+      <span class="privacy-badge">Browser only</span>
+    </header>
+
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-copy">
+        <p class="section-kicker">Public repository scanner</p>
+        <h1 id="page-title">Sweep a GitHub repo.<br><span>Keep the contents here.</span></h1>
+        <p class="hero-text">SecretSweep reads public repository files directly from GitHub and checks them locally for common hardcoded secrets.</p>
+      </div>
+      <pre class="terminal" aria-hidden="true"><code>01  $ sweep owner/repo
+02  fetching tree...
+03  scanning config/app.js
+04  finding: [redacted]
+05  report ready</code></pre>
+    </section>
+
+    <section class="scan-panel" aria-labelledby="scan-heading">
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker">Start a scan</p>
+          <h2 id="scan-heading">Repository</h2>
+        </div>
+        <p class="api-note">GitHub public API · 60 requests/hour unauthenticated</p>
+      </div>
+
+      <form id="scan-form" novalidate>
+        <label for="repo-input">GitHub repository URL or owner/repo</label>
+        <div class="repo-row">
+          <input id="repo-input" name="repo" type="text" autocomplete="url" placeholder="owner/repo or https://github.com/owner/repo" required>
+          <button id="scan-button" type="submit">Scan repository</button>
+        </div>
+        <p id="repo-error" class="field-error" role="alert" hidden></p>
+
+        <label for="token-input">Optional GitHub Personal Access Token</label>
+        <input id="token-input" name="token" type="password" autocomplete="off" placeholder="Optional — used only for GitHub API calls">
+        <p class="field-help">Raises the API rate limit to 5,000 requests/hour. Kept in memory only and never logged or stored.</p>
+      </form>
+
+      <div id="status" class="status" role="status" aria-live="polite">Enter a public repository to begin.</div>
+      <div id="progress-wrap" class="progress-wrap" hidden>
+        <div class="progress-meta"><span id="progress-label">Preparing scan…</span><span id="progress-count">0%</span></div>
+        <progress id="progress" max="100" value="0">0%</progress>
+      </div>
+    </section>
+
+    <section id="results-section" class="results-section" aria-labelledby="results-heading" hidden>
+      <div class="results-header">
+        <div>
+          <p class="section-kicker">Scan report</p>
+          <h2 id="results-heading">Findings</h2>
+        </div>
+        <button id="export-button" class="secondary-button" type="button" disabled>Export report</button>
+      </div>
+      <div id="summary" class="summary-grid"></div>
+      <div id="results" class="results-list"></div>
+    </section>
+
+    <footer class="site-footer">
+      <p>Repository contents are fetched directly from <code>api.github.com</code> and scanned in this browser. No relay server is used.</p>
+      <p>Current default branch only. Git history is not scanned.</p>
+    </footer>
+  </main>
+  <script src="patterns.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
